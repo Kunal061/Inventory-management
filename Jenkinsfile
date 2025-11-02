@@ -1,5 +1,5 @@
 pipeline {
-    agent {label 'pop'}
+    agent { label 'pop' }
     
     stages {
         stage('Checkout') {
@@ -24,8 +24,8 @@ pipeline {
                         
                         # Check if npm is installed
                         if ! command -v npm &> /dev/null; then
-                            echo "npm not found, installing..."
-                            sudo apt-get install -y npm
+                            echo "npm not found! It should be bundled with Node.js; fix installation."
+                            exit 1
                         else
                             echo "npm already installed: $(npm --version)"
                         fi
@@ -55,7 +55,7 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        # Create deployment directory if it doesn\'t exist
+                        # Create deployment directory if it doesn't exist
                         sudo mkdir -p /var/www/laxmi-app
                         
                         # Backup existing deployment
@@ -71,7 +71,7 @@ pipeline {
                         sudo chown -R www-data:www-data /var/www/laxmi-app/dist
                         sudo chmod -R 755 /var/www/laxmi-app/dist
                         
-                        # Update Nginx configuration to use port 5200
+                        # Update Nginx config for port 5200
                         sudo bash -c 'cat > /etc/nginx/sites-available/laxmi-app << EOF
 server {
     listen 5200;
@@ -79,42 +79,29 @@ server {
     root /var/www/laxmi-app/dist;
     index index.html;
 
-    # Gzip compression
     gzip on;
     gzip_vary on;
     gzip_min_length 1024;
-    gzip_types text/plain text/css text/xml text/javascript 
-               application/x-javascript application/xml+rss 
-               application/json application/javascript;
+    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json application/javascript;
 
-    # Security headers
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
 
-    # Handle React Router
     location / {
-        try_files \\$uri \\$uri/ /index.html;
+        try_files \$uri \$uri/ /index.html;
     }
-
-    # Cache static assets
-    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg)\\$ {
+    
+    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
 }
 EOF'
                         
-                        # Enable site (create symlink if it doesn\'t exist)
                         sudo ln -sf /etc/nginx/sites-available/laxmi-app /etc/nginx/sites-enabled/
-                        
-                        # Remove default site if it exists
                         sudo rm -f /etc/nginx/sites-enabled/default
-                        
-                        # Test Nginx configuration
                         sudo nginx -t
-                        
-                        # Reload Nginx to apply changes
                         sudo systemctl reload nginx
                     '''
                 }

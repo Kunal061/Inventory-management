@@ -9,35 +9,13 @@ pipeline {
             }
         }
         
-        stage('Setup Node.js and Install Dependencies') {
+        stage('Install Dependencies') {
             steps {
-                script {
-                    sh '''
-                        # Check Node.js presence, install if missing
-                        if ! command -v node &> /dev/null; then
-                            echo "Node.js not found, installing Node.js 20.x..."
-                            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-                            sudo apt-get install -y nodejs
-                        else
-                            echo "Node.js found: $(node --version)"
-                        fi
-                        
-                        # Check npm presence
-                        if ! command -v npm &> /dev/null; then
-                            echo "npm not found after Node.js install! Please fix Node.js installation."
-                            exit 1
-                        else
-                            echo "npm found: $(npm --version)"
-                        fi
-                        
-                        # Clean install dependencies
-                        npm ci
-                    '''
-                }
+                sh 'npm ci'
             }
         }
         
-        stage('Build Application') {
+        stage('Build') {
             steps {
                 sh 'npm run build'
             }
@@ -47,44 +25,25 @@ pipeline {
             steps {
                 script {
                     sh '''
+                        # Create deployment directory
                         sudo mkdir -p /var/www/laxmi-app
+                        
+                        # Remove old backup if exists
+                        sudo rm -rf /var/www/laxmi-app/dist_bak
+                        
+                        # Backup current deployment
                         if [ -d "/var/www/laxmi-app/dist" ]; then
-                            sudo rm -rf /var/www/laxmi-app/dist_bak
                             sudo mv /var/www/laxmi-app/dist /var/www/laxmi-app/dist_bak
                         fi
+                        
+                        # Copy new build
                         sudo cp -r dist /var/www/laxmi-app/
+                        
+                        # Set permissions
                         sudo chown -R www-data:www-data /var/www/laxmi-app/dist
                         sudo chmod -R 755 /var/www/laxmi-app/dist
-
-                        sudo bash -c 'cat > /etc/nginx/sites-available/laxmi-app << EOF
-server {
-    listen 5200;
-    server_name _;
-    root /var/www/laxmi-app/dist;
-    index index.html;
-
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json application/javascript;
-
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-
-    location / {
-        try_files \$uri \$uri/ /index.html;
-    }
-    
-    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-}
-EOF'
-                        sudo ln -sf /etc/nginx/sites-available/laxmi-app /etc/nginx/sites-enabled/
-                        sudo rm -f /etc/nginx/sites-enabled/default
-                        sudo nginx -t
+                        
+                        # Reload Nginx
                         sudo systemctl reload nginx
                     '''
                 }
@@ -100,9 +59,9 @@ EOF'
                     ).trim()
                     
                     if (healthCheck == "SUCCESS") {
-                        echo "✅ Health check passed - Application running on port 5200!"
+                        echo "✅ Application is running on port 5200"
                     } else {
-                        error "❌ Health check failed - Application not responding on port 5200"
+                        error "❌ Application failed health check on port 5200"
                     }
                 }
             }
@@ -110,39 +69,21 @@ EOF'
     }
     
     post {
-        always {
-            script {
-                echo """
-                🎉 Deployment Pipeline Completed!
-                
-                Job Name: ${env.JOB_NAME ?: 'Unknown'}
-                Build URL: ${env.BUILD_URL ?: 'Unknown'}
-                
-                Application Details:
-                - Deployed to: /var/www/laxmi-app/dist
-                - Served by: Nginx on port 5200
-                
-                Next Steps:
-                1. Visit http://YOUR_EC2_PUBLIC_IP:5200
-                2. Check Nginx logs if issues arise: sudo tail -f /var/log/nginx/error.log
-                """
-            }
-        }
         success {
-            echo "✅ Pipeline completed successfully!"
+            echo "✅ Deployment successful!"
+            echo "Application available at: http://13.233.122.241:5200"
         }
         failure {
-            echo "❌ Pipeline failed!"
+            echo "❌ Deployment failed!"
+            // Rollback on failure
             script {
                 sh '''
                     if [ -d "/var/www/laxmi-app/dist_bak" ]; then
-                        echo "🔄 Rolling back to previous version..."
+                        echo "🔄 Rolling back..."
                         sudo rm -rf /var/www/laxmi-app/dist
                         sudo mv /var/www/laxmi-app/dist_bak /var/www/laxmi-app/dist
                         sudo systemctl reload nginx
                         echo "✅ Rollback completed"
-                    else
-                        echo "⚠️ No backup found for rollback"
                     fi
                 '''
             }

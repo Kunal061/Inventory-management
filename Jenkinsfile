@@ -13,21 +13,21 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        # Check if Node.js is installed
+                        # Install Node.js if missing
                         if ! command -v node &> /dev/null; then
-                            echo "Node.js not found, installing..."
+                            echo "Node.js not found, installing Node.js 20.x..."
                             curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
                             sudo apt-get install -y nodejs
                         else
-                            echo "Node.js already installed: $(node --version)"
+                            echo "Node.js found: $(node --version)"
                         fi
                         
-                        # Check if npm is installed
+                        # Check npm presence
                         if ! command -v npm &> /dev/null; then
-                            echo "npm not found! It should be bundled with Node.js; fix installation."
+                            echo "npm not found after Node.js install! Exiting..."
                             exit 1
                         else
-                            echo "npm already installed: $(npm --version)"
+                            echo "npm found: $(npm --version)"
                         fi
                         
                         # Clean install dependencies
@@ -41,37 +41,21 @@ pipeline {
             steps {
                 sh 'npm run build'
             }
-            post {
-                success {
-                    echo '✅ Build successful!'
-                }
-                failure {
-                    echo '❌ Build failed!'
-                }
-            }
         }
         
         stage('Deploy to EC2') {
             steps {
                 script {
                     sh '''
-                        # Create deployment directory if it doesn't exist
                         sudo mkdir -p /var/www/laxmi-app
-                        
-                        # Backup existing deployment
                         if [ -d "/var/www/laxmi-app/dist" ]; then
                             sudo rm -rf /var/www/laxmi-app/dist_bak
                             sudo mv /var/www/laxmi-app/dist /var/www/laxmi-app/dist_bak
                         fi
-                        
-                        # Copy new build to web directory
                         sudo cp -r dist /var/www/laxmi-app/
-                        
-                        # Set proper ownership and permissions
                         sudo chown -R www-data:www-data /var/www/laxmi-app/dist
                         sudo chmod -R 755 /var/www/laxmi-app/dist
-                        
-                        # Update Nginx config for port 5200
+
                         sudo bash -c 'cat > /etc/nginx/sites-available/laxmi-app << EOF
 server {
     listen 5200;
@@ -98,7 +82,6 @@ server {
     }
 }
 EOF'
-                        
                         sudo ln -sf /etc/nginx/sites-available/laxmi-app /etc/nginx/sites-enabled/
                         sudo rm -f /etc/nginx/sites-enabled/default
                         sudo nginx -t
@@ -117,9 +100,9 @@ EOF'
                     ).trim()
                     
                     if (healthCheck == "SUCCESS") {
-                        echo "✅ Health check passed - Application is running on port 5200!"
+                        echo "✅ Health check passed - Application running on port 5200!"
                     } else {
-                        error "❌ Health check failed - Application is not responding on port 5200"
+                        error "❌ Health check failed - Application not responding on port 5200"
                     }
                 }
             }
@@ -138,14 +121,13 @@ EOF'
                 Job Name: ${JOB_NAME}
                 Build URL: ${BUILD_URL}
                 
-                🔧 Application Details:
+                Application Details:
                 - Deployed to: /var/www/laxmi-app/dist
-                - Served by: Nginx
-                - Access URL: http://YOUR_EC2_PUBLIC_IP:5200
+                - Served by: Nginx on port 5200
                 
-                📋 Next Steps:
-                1. Visit http://YOUR_EC2_PUBLIC_IP:5200 to see your application
-                2. Check Nginx logs if you encounter issues: sudo tail -f /var/log/nginx/error.log
+                Next Steps:
+                1. Visit http://YOUR_EC2_PUBLIC_IP:5200
+                2. Check logs: sudo tail -f /var/log/nginx/error.log
                 """
             }
         }
@@ -154,8 +136,6 @@ EOF'
         }
         failure {
             echo "❌ Pipeline failed!"
-            
-            // Attempt rollback
             script {
                 sh '''
                     if [ -d "/var/www/laxmi-app/dist_bak" ]; then

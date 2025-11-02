@@ -21,10 +21,21 @@ pipeline {
             }
         }
         
-        stage('Deploy to EC2') {
+        stage('Setup Server and Deploy') {
             steps {
                 script {
                     sh '''
+                        # Update package list
+                        sudo apt update
+                        
+                        # Install Nginx if not installed
+                        if ! command -v nginx &> /dev/null; then
+                            echo "Installing Nginx..."
+                            sudo apt install -y nginx
+                        else
+                            echo "Nginx already installed"
+                        fi
+                        
                         # Create deployment directory
                         sudo mkdir -p /var/www/laxmi-app
                         
@@ -43,8 +54,32 @@ pipeline {
                         sudo chown -R www-data:www-data /var/www/laxmi-app/dist
                         sudo chmod -R 755 /var/www/laxmi-app/dist
                         
-                        # Reload Nginx
-                        sudo systemctl reload nginx
+                        # Configure Nginx for port 5200
+                        sudo bash -c 'cat > /etc/nginx/sites-available/laxmi-app << EOF
+server {
+    listen 5200;
+    server_name _;
+    root /var/www/laxmi-app/dist;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+}
+EOF'
+                        
+                        # Enable the site
+                        sudo ln -sf /etc/nginx/sites-available/laxmi-app /etc/nginx/sites-enabled/
+                        
+                        # Remove default site
+                        sudo rm -f /etc/nginx/sites-enabled/default
+                        
+                        # Test Nginx configuration
+                        sudo nginx -t
+                        
+                        # Restart Nginx
+                        sudo systemctl restart nginx
+                        sudo systemctl enable nginx
                     '''
                 }
             }
@@ -53,6 +88,9 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
+                    // Wait a moment for Nginx to start
+                    sh 'sleep 5'
+                    
                     def healthCheck = sh(
                         script: 'curl -f http://localhost:5200 > /dev/null 2>&1 && echo "SUCCESS" || echo "FAILED"',
                         returnStdout: true
@@ -82,7 +120,11 @@ pipeline {
                         echo "🔄 Rolling back..."
                         sudo rm -rf /var/www/laxmi-app/dist
                         sudo mv /var/www/laxmi-app/dist_bak /var/www/laxmi-app/dist
-                        sudo systemctl reload nginx
+                        
+                        # Restart Nginx after rollback
+                        if command -v nginx &> /dev/null; then
+                            sudo systemctl restart nginx
+                        fi
                         echo "✅ Rollback completed"
                     fi
                 '''

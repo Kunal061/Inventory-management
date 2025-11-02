@@ -1,9 +1,11 @@
 pipeline {
-    agent {label 'pop'}
+    agent { label 'pop' }
     
     environment {
         APP_DIR = '/var/www/laxmi-app'
         NODE_VERSION = '20.x'
+        EC2_USER = 'ubuntu'           // Update with your EC2 username
+        EC2_HOST = 'your.ec2.ip.addr' // Update with your EC2 instance IP or hostname
     }
     
     stages {
@@ -33,31 +35,19 @@ pipeline {
         
         stage('Deploy') {
             steps {
-                echo '🚀 Deploying to EC2...'
-                sshPublisher(
-                    publishers: [
-                        sshPublisherDesc(
-                            configName: 'EC2 Localhost',
-                            transfers: [
-                                sshTransfer(
-                                    sourceFiles: 'dist/**',
-                                    removePrefix: 'dist',
-                                    remoteDirectory: 'laxmi-app',
-                                    execCommand: """
-                                        cd ${APP_DIR}
-                                        sudo rm -rf dist_bak
-                                        sudo mv dist dist_bak || true
-                                        sudo mv /var/www/laxmi-app/dist dist
-                                        sudo chown -R www-data:www-data dist
-                                        sudo chmod -R 755 dist
-                                        sudo systemctl reload nginx
-                                        echo '✅ Deployment complete!'
-                                    """
-                                )
-                            ]
-                        )
-                    ]
-                )
+                echo "🚀 Deploying to EC2 at ${EC2_HOST}..."
+                // Upload files and run remote commands via SSH
+                sh """
+                    scp -r dist/* ${EC2_USER}@${EC2_HOST}:${APP_DIR}/dist_tmp
+                    ssh ${EC2_USER}@${EC2_HOST} << EOF
+                        sudo mv ${APP_DIR}/dist ${APP_DIR}/dist_bak || true
+                        sudo mv ${APP_DIR}/dist_tmp ${APP_DIR}/dist
+                        sudo chown -R www-data:www-data ${APP_DIR}/dist
+                        sudo chmod -R 755 ${APP_DIR}/dist
+                        sudo systemctl reload nginx
+                        echo '✅ Deployment complete!'
+                    EOF
+                """
             }
         }
         
@@ -87,4 +77,3 @@ pipeline {
         }
     }
 }
-

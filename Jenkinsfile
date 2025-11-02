@@ -183,18 +183,87 @@ EOF'
             }
         }
         
+        stage('Create Diagnostic Script') {
+            steps {
+                script {
+                    sh '''
+                        # Create a simple diagnostic script on the server
+                        sudo bash -c 'cat > /home/ubuntu/diagnose_app.sh << "EOF"
+#!/bin/bash
+
+echo "=== Application Diagnostic Script ==="
+echo "Server IP: $(hostname -I)"
+echo "Date: $(date)"
+echo ""
+
+echo "=== Nginx Status ==="
+sudo systemctl status nginx --no-pager -l
+echo ""
+
+echo "=== Listening Ports ==="
+sudo netstat -tlnp | grep :5200 || echo "Port 5200 not found in listening ports"
+echo ""
+
+echo "=== Firewall Status ==="
+if command -v ufw &> /dev/null; then
+    echo "UFW Status:"
+    sudo ufw status
+else
+    echo "UFW not installed"
+fi
+echo ""
+
+echo "=== Security Groups Check ==="
+echo "This needs to be verified in AWS Console"
+echo ""
+
+echo "=== Nginx Configuration ==="
+sudo nginx -T 2>/dev/null | grep -A 20 "listen 5200" || echo "No server block found for port 5200"
+echo ""
+
+echo "=== Application Files ==="
+if [ -d "/var/www/laxmi-app/dist" ]; then
+    echo "Application directory exists:"
+    ls -la /var/www/laxmi-app/dist
+else
+    echo "Application directory does not exist"
+fi
+echo ""
+
+echo "=== Local Access Test ==="
+if curl -f http://localhost:5200 > /dev/null 2>&1; then
+    echo "Local access: SUCCESS"
+    echo "Response code: $(curl -s -o /dev/null -w "%{http_code}" http://localhost:5200)"
+else
+    echo "Local access: FAILED"
+    echo "Error: $(curl -f http://localhost:5200 2>&1)"
+fi
+echo ""
+
+echo "=== End Diagnostic Script ==="
+EOF'
+                        
+                        sudo chmod +x /home/ubuntu/diagnose_app.sh
+                        echo "Diagnostic script created at /home/ubuntu/diagnose_app.sh"
+                        echo "To run it manually, SSH to your server and execute: /home/ubuntu/diagnose_app.sh"
+                    '''
+                }
+            }
+        }
+        
         stage('Final Status') {
             steps {
                 script {
                     echo "✅ Deployment pipeline completed successfully!"
                     echo "Application should be accessible at: http://13.233.122.241:5200"
                     echo ""
-                    echo "If you cannot access the application:"
-                    echo "1. Check security groups in AWS for port 5200 inbound rule"
-                    echo "2. Verify the server IP is correct"
-                    echo "3. SSH to the server and run: sudo systemctl status nginx"
-                    echo "4. Check Nginx error logs: sudo tail -f /var/log/nginx/error.log"
-                    echo "5. Test locally: curl http://localhost:5200"
+                    echo "If you cannot access the application, please run the diagnostic script:"
+                    echo "SSH to your server and run: /home/ubuntu/diagnose_app.sh"
+                    echo ""
+                    echo "Common issues and solutions:"
+                    echo "1. Security Group: Ensure inbound rule for port 5200 from your IP"
+                    echo "2. Firewall: Check if UFW is blocking the port"
+                    echo "3. Nginx Config: Verify the server block is correct"
                 }
             }
         }
@@ -204,33 +273,12 @@ EOF'
         success {
             echo "✅ Deployment successful!"
             echo "Application should be running at: http://13.233.122.241:5200"
+            echo "If inaccessible, run: /home/ubuntu/diagnose_app.sh on the server"
         }
         failure {
             echo "❌ Deployment failed!"
             echo "Check the logs above for details."
-            echo ""
-            echo "Common troubleshooting steps:"
-            echo "1. Verify Nginx installation: sudo nginx -v"
-            echo "2. Check Nginx status: sudo systemctl status nginx"
-            echo "3. Check Nginx error logs: sudo tail -f /var/log/nginx/error.log"
-            echo "4. Verify port 5200 is configured: sudo netstat -tlnp | grep :5200"
-            
-            // Attempt rollback
-            script {
-                sh '''
-                    if [ -d "/var/www/laxmi-app/dist_bak" ]; then
-                        echo "🔄 Rolling back to previous version..."
-                        sudo rm -rf /var/www/laxmi-app/dist
-                        sudo mv /var/www/laxmi-app/dist_bak /var/www/laxmi-app/dist
-                        
-                        # Restart Nginx after rollback
-                        if command -v nginx &> /dev/null; then
-                            sudo systemctl restart nginx
-                        fi
-                        echo "✅ Rollback completed"
-                    fi
-                '''
-            }
+            echo "Run diagnostic script: /home/ubuntu/diagnose_app.sh"
         }
     }
 }

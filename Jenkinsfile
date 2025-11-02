@@ -5,7 +5,7 @@ pipeline {
         APP_DIR = '/var/www/laxmi-app'
         NODE_VERSION = '20.x'
         EC2_USER = 'ubuntu'           // Update with your EC2 username
-        EC2_HOST = 'your.ec2.ip.addr' // Update with your EC2 instance IP or hostname
+        EC2_HOST = '13.233.122.241' // Update with your EC2 instance IP or hostname
     }
     
     stages {

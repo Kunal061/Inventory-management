@@ -4,7 +4,8 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                git branch: 'main',
+                    url: 'https://github.com/Kunal061/Inventory-management.git'
             }
         }
         
@@ -54,7 +55,7 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        # Create deployment directory if it doesn't exist
+                        # Create deployment directory if it doesn\'t exist
                         sudo mkdir -p /var/www/laxmi-app
                         
                         # Backup existing deployment
@@ -63,10 +64,10 @@ pipeline {
                             sudo mv /var/www/laxmi-app/dist /var/www/laxmi-app/dist_bak
                         fi
                         
-                        # Copy new build
+                        # Copy new build to web directory
                         sudo cp -r dist /var/www/laxmi-app/
                         
-                        # Set permissions
+                        # Set proper ownership and permissions
                         sudo chown -R www-data:www-data /var/www/laxmi-app/dist
                         sudo chmod -R 755 /var/www/laxmi-app/dist
                         
@@ -104,7 +105,7 @@ server {
 }
 EOF'
                         
-                        # Enable site (create symlink if it doesn\\'t exist)
+                        # Enable site (create symlink if it doesn\'t exist)
                         sudo ln -sf /etc/nginx/sites-available/laxmi-app /etc/nginx/sites-enabled/
                         
                         # Remove default site if it exists
@@ -113,7 +114,7 @@ EOF'
                         # Test Nginx configuration
                         sudo nginx -t
                         
-                        # Reload Nginx
+                        # Reload Nginx to apply changes
                         sudo systemctl reload nginx
                     '''
                 }

@@ -1,10 +1,6 @@
 pipeline {
     agent {label 'pop'}
     
-    tools {
-        nodejs 'node-20'
-    }
-    
     stages {
         stage('Checkout') {
             steps {
@@ -12,9 +8,31 @@ pipeline {
             }
         }
         
-        stage('Install Dependencies') {
+        stage('Setup Node.js and Install Dependencies') {
             steps {
-                sh 'npm ci'
+                script {
+                    sh '''
+                        # Check if Node.js is installed
+                        if ! command -v node &> /dev/null; then
+                            echo "Node.js not found, installing..."
+                            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                            sudo apt-get install -y nodejs
+                        else
+                            echo "Node.js already installed: $(node --version)"
+                        fi
+                        
+                        # Check if npm is installed
+                        if ! command -v npm &> /dev/null; then
+                            echo "npm not found, installing..."
+                            sudo apt-get install -y npm
+                        else
+                            echo "npm already installed: $(npm --version)"
+                        fi
+                        
+                        # Clean install dependencies
+                        npm ci
+                    '''
+                }
             }
         }
         

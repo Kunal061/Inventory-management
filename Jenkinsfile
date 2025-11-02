@@ -13,7 +13,7 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        # Install Node.js if missing
+                        # Check Node.js presence, install if missing
                         if ! command -v node &> /dev/null; then
                             echo "Node.js not found, installing Node.js 20.x..."
                             curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
@@ -24,7 +24,7 @@ pipeline {
                         
                         # Check npm presence
                         if ! command -v npm &> /dev/null; then
-                            echo "npm not found after Node.js install! Exiting..."
+                            echo "npm not found after Node.js install! Please fix Node.js installation."
                             exit 1
                         else
                             echo "npm found: $(npm --version)"
@@ -112,14 +112,11 @@ EOF'
     post {
         always {
             script {
-                def BUILD_URL = env.BUILD_URL ?: 'Unknown'
-                def JOB_NAME = env.JOB_NAME ?: 'Unknown'
-                
                 echo """
                 🎉 Deployment Pipeline Completed!
                 
-                Job Name: ${JOB_NAME}
-                Build URL: ${BUILD_URL}
+                Job Name: ${env.JOB_NAME ?: 'Unknown'}
+                Build URL: ${env.BUILD_URL ?: 'Unknown'}
                 
                 Application Details:
                 - Deployed to: /var/www/laxmi-app/dist
@@ -127,7 +124,7 @@ EOF'
                 
                 Next Steps:
                 1. Visit http://YOUR_EC2_PUBLIC_IP:5200
-                2. Check logs: sudo tail -f /var/log/nginx/error.log
+                2. Check Nginx logs if issues arise: sudo tail -f /var/log/nginx/error.log
                 """
             }
         }

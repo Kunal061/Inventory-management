@@ -1,5 +1,5 @@
 pipeline {
-    agent any
+    agent {label 'pop'}
     
     environment {
         APP_DIR = '/var/www/laxmi-app'

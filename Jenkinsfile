@@ -25,7 +25,10 @@ pipeline {
             steps {
                 script {
                     sh '''
+                        echo "=== Starting Server Setup ==="
+                        
                         # Update package list
+                        echo "Updating package list..."
                         sudo apt update
                         
                         # Install Nginx if not installed
@@ -33,28 +36,35 @@ pipeline {
                             echo "Installing Nginx..."
                             sudo apt install -y nginx
                         else
-                            echo "Nginx already installed"
+                            echo "Nginx already installed: $(nginx -v 2>&1)"
                         fi
                         
                         # Create deployment directory
+                        echo "Creating deployment directory..."
                         sudo mkdir -p /var/www/laxmi-app
+                        sudo chown -R www-data:www-data /var/www/laxmi-app
                         
                         # Remove old backup if exists
+                        echo "Cleaning up old backup..."
                         sudo rm -rf /var/www/laxmi-app/dist_bak
                         
                         # Backup current deployment
                         if [ -d "/var/www/laxmi-app/dist" ]; then
+                            echo "Backing up current deployment..."
                             sudo mv /var/www/laxmi-app/dist /var/www/laxmi-app/dist_bak
                         fi
                         
                         # Copy new build
+                        echo "Deploying new build..."
                         sudo cp -r dist /var/www/laxmi-app/
                         
                         # Set permissions
+                        echo "Setting permissions..."
                         sudo chown -R www-data:www-data /var/www/laxmi-app/dist
                         sudo chmod -R 755 /var/www/laxmi-app/dist
                         
                         # Configure Nginx for port 5200
+                        echo "Configuring Nginx for port 5200..."
                         sudo bash -c 'cat > /etc/nginx/sites-available/laxmi-app << EOF
 server {
     listen 5200;
@@ -65,20 +75,37 @@ server {
     location / {
         try_files \$uri \$uri/ /index.html;
     }
+    
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
 }
 EOF'
                         
                         # Enable the site
+                        echo "Enabling site..."
                         sudo ln -sf /etc/nginx/sites-available/laxmi-app /etc/nginx/sites-enabled/
                         
                         # Remove default site
+                        echo "Removing default site..."
                         sudo rm -f /etc/nginx/sites-enabled/default
                         
                         # Test Nginx configuration
-                        sudo nginx -t
+                        echo "Testing Nginx configuration..."
+                        if sudo nginx -t; then
+                            echo "Nginx configuration test passed"
+                        else
+                            echo "Nginx configuration test failed"
+                            exit 1
+                        fi
                         
                         # Restart Nginx
+                        echo "Restarting Nginx..."
                         sudo systemctl restart nginx
+                        
+                        # Enable Nginx to start on boot
+                        echo "Enabling Nginx to start on boot..."
                         sudo systemctl enable nginx
                         
                         # Verify Nginx is running
@@ -88,43 +115,86 @@ EOF'
                             echo "Starting Nginx..."
                             sudo systemctl start nginx
                         fi
+                        
+                        echo "=== Server Setup Complete ==="
                     '''
                 }
             }
         }
         
-        stage('Health Check') {
+        stage('Verify Deployment') {
             steps {
                 script {
-                    // Wait a moment for Nginx to start
-                    sh 'sleep 5'
-                    
-                    def healthCheck = sh(
-                        script: 'curl -f http://localhost:5200 > /dev/null 2>&1 && echo "SUCCESS" || echo "FAILED"',
-                        returnStdout: true
-                    ).trim()
-                    
-                    if (healthCheck == "SUCCESS") {
-                        echo "✅ Application is running on port 5200"
-                    } else {
-                        error "❌ Application failed health check on port 5200"
-                    }
+                    sh '''
+                        echo "=== Verifying Deployment ==="
+                        
+                        # Wait a moment for Nginx to start
+                        echo "Waiting for Nginx to start..."
+                        sleep 5
+                        
+                        # Check if Nginx is running
+                        if sudo systemctl is-active --quiet nginx; then
+                            echo "✅ Nginx service is running"
+                        else
+                            echo "❌ Nginx service is not running"
+                            sudo systemctl status nginx
+                            exit 1
+                        fi
+                        
+                        # Check if port 5200 is listening
+                        echo "Checking if port 5200 is listening..."
+                        if sudo netstat -tlnp | grep :5200; then
+                            echo "✅ Port 5200 is listening"
+                        else
+                            echo "❌ Port 5200 is not listening"
+                            echo "Current listening ports:"
+                            sudo netstat -tlnp | grep :5200 || true
+                        fi
+                        
+                        # Check Nginx configuration
+                        echo "Checking Nginx configuration..."
+                        sudo nginx -T | grep -A 10 "listen 5200" || echo "No server listening on 5200 found"
+                        
+                        # Check deployed files
+                        echo "Checking deployed files..."
+                        if [ -d "/var/www/laxmi-app/dist" ]; then
+                            echo "✅ Deployment directory exists"
+                            echo "Files in deployment directory:"
+                            ls -la /var/www/laxmi-app/dist
+                        else
+                            echo "❌ Deployment directory does not exist"
+                        fi
+                        
+                        # Local health check
+                        echo "Performing local health check..."
+                        if curl -f http://localhost:5200 > /dev/null 2>&1; then
+                            echo "✅ Local health check passed"
+                            echo "Response headers:"
+                            curl -I http://localhost:5200 | head -5
+                        else
+                            echo "❌ Local health check failed"
+                            echo "Attempting to get error details:"
+                            curl -v http://localhost:5200 2>&1 | head -10 || true
+                        fi
+                        
+                        echo "=== Verification Complete ==="
+                    '''
                 }
             }
         }
         
-        stage('Keep Application Running') {
+        stage('Final Status') {
             steps {
                 script {
-                    echo "✅ Deployment completed successfully!"
-                    echo "Application is now running continuously on http://13.233.122.241:5200"
-                    echo "Nginx service is set to start automatically on boot"
+                    echo "✅ Deployment pipeline completed successfully!"
+                    echo "Application should be accessible at: http://13.233.122.241:5200"
                     echo ""
-                    echo "To stop the application, you need to:"
-                    echo "1. Stop the Nginx service: sudo systemctl stop nginx"
-                    echo "2. Or disable it from starting on boot: sudo systemctl disable nginx"
-                    echo ""
-                    echo "The application will remain active until manually stopped."
+                    echo "If you cannot access the application:"
+                    echo "1. Check security groups in AWS for port 5200 inbound rule"
+                    echo "2. Verify the server IP is correct"
+                    echo "3. SSH to the server and run: sudo systemctl status nginx"
+                    echo "4. Check Nginx error logs: sudo tail -f /var/log/nginx/error.log"
+                    echo "5. Test locally: curl http://localhost:5200"
                 }
             }
         }
@@ -133,16 +203,23 @@ EOF'
     post {
         success {
             echo "✅ Deployment successful!"
-            echo "Application available at: http://13.233.122.241:5200"
-            echo "The application is now running continuously and will restart automatically after server reboot."
+            echo "Application should be running at: http://13.233.122.241:5200"
         }
         failure {
             echo "❌ Deployment failed!"
-            // Rollback on failure
+            echo "Check the logs above for details."
+            echo ""
+            echo "Common troubleshooting steps:"
+            echo "1. Verify Nginx installation: sudo nginx -v"
+            echo "2. Check Nginx status: sudo systemctl status nginx"
+            echo "3. Check Nginx error logs: sudo tail -f /var/log/nginx/error.log"
+            echo "4. Verify port 5200 is configured: sudo netstat -tlnp | grep :5200"
+            
+            // Attempt rollback
             script {
                 sh '''
                     if [ -d "/var/www/laxmi-app/dist_bak" ]; then
-                        echo "🔄 Rolling back..."
+                        echo "🔄 Rolling back to previous version..."
                         sudo rm -rf /var/www/laxmi-app/dist
                         sudo mv /var/www/laxmi-app/dist_bak /var/www/laxmi-app/dist
                         

@@ -37,6 +37,7 @@ pipeline {
             steps {
                 echo "🚀 Deploying to EC2 at ${EC2_HOST}..."
                 sh """
+                    ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} "mkdir -p ${APP_DIR}/dist_tmp"
                     scp -o StrictHostKeyChecking=no -r dist/assets dist/index.html dist/vite.svg ${EC2_USER}@${EC2_HOST}:${APP_DIR}/dist_tmp
                     ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << EOF
                         sudo mv ${APP_DIR}/dist ${APP_DIR}/dist_bak || true

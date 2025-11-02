@@ -80,6 +80,14 @@ EOF'
                         # Restart Nginx
                         sudo systemctl restart nginx
                         sudo systemctl enable nginx
+                        
+                        # Verify Nginx is running
+                        if sudo systemctl is-active --quiet nginx; then
+                            echo "Nginx is running"
+                        else
+                            echo "Starting Nginx..."
+                            sudo systemctl start nginx
+                        fi
                     '''
                 }
             }
@@ -104,12 +112,29 @@ EOF'
                 }
             }
         }
+        
+        stage('Keep Application Running') {
+            steps {
+                script {
+                    echo "✅ Deployment completed successfully!"
+                    echo "Application is now running continuously on http://13.233.122.241:5200"
+                    echo "Nginx service is set to start automatically on boot"
+                    echo ""
+                    echo "To stop the application, you need to:"
+                    echo "1. Stop the Nginx service: sudo systemctl stop nginx"
+                    echo "2. Or disable it from starting on boot: sudo systemctl disable nginx"
+                    echo ""
+                    echo "The application will remain active until manually stopped."
+                }
+            }
+        }
     }
     
     post {
         success {
             echo "✅ Deployment successful!"
             echo "Application available at: http://13.233.122.241:5200"
+            echo "The application is now running continuously and will restart automatically after server reboot."
         }
         failure {
             echo "❌ Deployment failed!"

@@ -1,79 +1,125 @@
 pipeline {
-    agent { label 'pop' }
+    agent {label 'pop'}
     
-    environment {
-        APP_DIR = '/var/www/laxmi-app'
-        NODE_VERSION = '20.x'
-        EC2_USER = 'ubuntu'           // Update with your EC2 username
-        EC2_HOST = '13.233.122.241'  // Update with your EC2 instance IP or hostname
+    tools {
+        nodejs 'node-20'
     }
     
     stages {
         stage('Checkout') {
             steps {
-                echo '🔄 Checking out code from Git...'
                 checkout scm
             }
         }
         
-        stage('Build') {
+        stage('Install Dependencies') {
             steps {
-                echo '📦 Installing dependencies and building...'
-                sh '''
-                    npm install
-                    npm run build
-                '''
+                sh 'npm ci'
             }
         }
         
-        stage('Archive Build') {
+        stage('Build Application') {
             steps {
-                echo '📁 Archiving build artifacts...'
-                archiveArtifacts artifacts: 'dist/**/*', fingerprint: true
+                sh 'npm run build'
+            }
+            post {
+                success {
+                    echo '✅ Build successful!'
+                }
+                failure {
+                    echo '❌ Build failed!'
+                }
             }
         }
         
-        stage('Deploy') {
+        stage('Deploy to EC2') {
             steps {
-                echo "🚀 Deploying to EC2 at ${EC2_HOST}..."
-                sh """
-                    ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} "sudo mkdir -p ${APP_DIR}/dist_tmp && sudo chown ${EC2_USER} ${APP_DIR}/dist_tmp"
-                    scp -o StrictHostKeyChecking=no -r dist/assets dist/index.html dist/vite.svg ${EC2_USER}@${EC2_HOST}:${APP_DIR}/dist_tmp
-                    ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << EOF
-                        sudo mv ${APP_DIR}/dist ${APP_DIR}/dist_bak || true
-                        sudo mv ${APP_DIR}/dist_tmp ${APP_DIR}/dist
-                        sudo chown -R www-data:www-data ${APP_DIR}/dist
-                        sudo chmod -R 755 ${APP_DIR}/dist
+                script {
+                    sh '''
+                        # Create deployment directory if it doesn't exist
+                        sudo mkdir -p /var/www/laxmi-app
+                        
+                        # Backup existing deployment
+                        if [ -d "/var/www/laxmi-app/dist" ]; then
+                            sudo rm -rf /var/www/laxmi-app/dist_bak
+                            sudo mv /var/www/laxmi-app/dist /var/www/laxmi-app/dist_bak
+                        fi
+                        
+                        # Copy new build
+                        sudo cp -r dist /var/www/laxmi-app/
+                        
+                        # Set permissions
+                        sudo chown -R www-data:www-data /var/www/laxmi-app/dist
+                        sudo chmod -R 755 /var/www/laxmi-app/dist
+                        
+                        # Reload Nginx
                         sudo systemctl reload nginx
-                        echo '✅ Deployment complete!'
-                    EOF
-                """
+                    '''
+                }
             }
         }
         
-        stage('Verify') {
+        stage('Health Check') {
             steps {
-                echo '✅ Verifying deployment...'
-                sh 'curl -f http://localhost || exit 1'
+                script {
+                    def healthCheck = sh(
+                        script: 'curl -f http://localhost > /dev/null 2>&1 && echo "SUCCESS" || echo "FAILED"',
+                        returnStdout: true
+                    ).trim()
+                    
+                    if (healthCheck == "SUCCESS") {
+                        echo "✅ Health check passed - Application is running!"
+                    } else {
+                        error "❌ Health check failed - Application is not responding"
+                    }
+                }
             }
         }
     }
     
     post {
+        always {
+            script {
+                def BUILD_URL = env.BUILD_URL ?: 'Unknown'
+                def JOB_NAME = env.JOB_NAME ?: 'Unknown'
+                
+                echo """
+                🎉 Deployment Pipeline Completed!
+                
+                Job Name: ${JOB_NAME}
+                Build URL: ${BUILD_URL}
+                
+                🔧 Application Details:
+                - Deployed to: /var/www/laxmi-app/dist
+                - Served by: Nginx
+                - Access URL: http://YOUR_EC2_PUBLIC_IP
+                
+                📋 Next Steps:
+                1. Visit http://YOUR_EC2_PUBLIC_IP to see your application
+                2. Check Nginx logs if you encounter issues: sudo tail -f /var/log/nginx/error.log
+                """
+            }
+        }
         success {
-            echo '🎉 Deployment successful!'
-            emailext subject: "✅ Deployment Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                     body: "The deployment was successful!\n\nJob: ${env.JOB_NAME}\nBuild: ${env.BUILD_NUMBER}\nView: ${env.BUILD_URL}",
-                     to: "your-email@example.com"
+            echo "✅ Pipeline completed successfully!"
         }
         failure {
-            echo '❌ Deployment failed!'
-            emailext subject: "❌ Deployment Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                     body: "The deployment failed!\n\nJob: ${env.JOB_NAME}\nBuild: ${env.BUILD_NUMBER}\nView: ${env.BUILD_URL}",
-                     to: "your-email@example.com"
-        }
-        always {
-            cleanWs()
+            echo "❌ Pipeline failed!"
+            
+            // Attempt rollback
+            script {
+                sh '''
+                    if [ -d "/var/www/laxmi-app/dist_bak" ]; then
+                        echo "🔄 Rolling back to previous version..."
+                        sudo rm -rf /var/www/laxmi-app/dist
+                        sudo mv /var/www/laxmi-app/dist_bak /var/www/laxmi-app/dist
+                        sudo systemctl reload nginx
+                        echo "✅ Rollback completed"
+                    else
+                        echo "⚠️ No backup found for rollback"
+                    fi
+                '''
+            }
         }
     }
 }

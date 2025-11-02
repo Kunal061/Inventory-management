@@ -32,11 +32,13 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ item, onClose, onSave }) =>
       newErrors.name = 'Item name is required';
     }
     
-    if (!price || parseFloat(price) <= 0) {
+    const priceValue = parseFloat(price);
+    if (!price || isNaN(priceValue) || priceValue <= 0) {
       newErrors.price = 'Valid price is required';
     }
     
-    if (!stock || parseInt(stock) < 0) {
+    const stockValue = parseInt(stock);
+    if (!stock || isNaN(stockValue) || stockValue < 0) {
       newErrors.stock = 'Valid stock quantity is required';
     }
 
@@ -52,6 +54,8 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ item, onClose, onSave }) =>
     }
 
     const items = storage.getItems();
+    const priceValue = parseFloat(price);
+    const stockValue = parseInt(stock);
     
     if (item) {
       // Update existing item
@@ -61,8 +65,8 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ item, onClose, onSave }) =>
               ...i,
               name,
               category,
-              price: parseFloat(price),
-              stock: parseInt(stock),
+              price: priceValue,
+              stock: stockValue,
             }
           : i
       );
@@ -73,8 +77,8 @@ const AddItemModal: React.FC<AddItemModalProps> = ({ item, onClose, onSave }) =>
         id: `item-${Date.now()}`,
         name,
         category,
-        price: parseFloat(price),
-        stock: parseInt(stock),
+        price: priceValue,
+        stock: stockValue,
         createdAt: new Date().toISOString(),
       };
       storage.saveItems([...items, newItem]);

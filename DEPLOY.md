@@ -12,7 +12,7 @@ Complete guide to deploy the application on AWS EC2 with optional Jenkins CI/CD.
 ## 🏗️ Architecture Overview
 
 ```
-Internet → Nginx (Port 80/443) → Vite Build (Static Files) → Browser
+Internet → Nginx (Port 5200) → Vite Build (Static Files) → Browser
 ```
 
 ## 📦 Option 1: Manual Deployment (Quick Start)
@@ -25,7 +25,7 @@ Internet → Nginx (Port 80/443) → Vite Build (Static Files) → Browser
    - **Instance Type**: t2.micro (free tier) or t3.small
    - **Key Pair**: Create/download a new key pair
    - **Security Group**: 
-     - HTTP (Port 80) from `0.0.0.0/0`
+     - Custom TCP (Port 5200) from `0.0.0.0/0`
      - HTTPS (Port 443) from `0.0.0.0/0` (if using SSL)
      - SSH (Port 22) from your IP
    - **Storage**: 20 GB minimum
@@ -88,7 +88,7 @@ Add this configuration:
 
 ```nginx
 server {
-    listen 80;
+    listen 5200;
     server_name YOUR_DOMAIN_OR_IP;
     root /var/www/laxmi-app/dist;
     index index.html;
@@ -152,7 +152,7 @@ sudo chmod -R 755 /var/www/laxmi-app
 
 Open your browser and visit:
 ```
-http://YOUR_EC2_IP_ADDRESS
+http://YOUR_EC2_IP_ADDRESS:5200
 ```
 
 You should see the Laxmi Stationary app!
@@ -198,215 +198,60 @@ sudo systemctl status jenkins
 
 ### Step 2: Setup Jenkins
 
-1. **Access Jenkins**:
-   ```
-   http://YOUR_EC2_IP:8080
-   ```
-
-2. **Get Initial Password**:
+1. **Get Initial Admin Password**
    ```bash
    sudo cat /var/lib/jenkins/secrets/initialAdminPassword
    ```
 
+2. **Access Jenkins in Browser**
+   ```
+   http://YOUR_EC2_IP_ADDRESS:8080
+   ```
+
 3. **Install Suggested Plugins**
+   - NodeJS Plugin
+   - Publish Over SSH Plugin
+   - Git Plugin
 
 4. **Create Admin User**
+   - Username: admin
+   - Password: secure_password
+   - Full name: Jenkins Admin
+   - Email: your_email@example.com
 
-### Step 3: Install Jenkins Plugins
-
-Go to **Manage Jenkins** → **Manage Plugins** → **Available** tab and install:
-
-- ✅ **Git plugin** (usually pre-installed)
-- ✅ **NodeJS plugin** (for Node.js builds)
-- ✅ **Publish Over SSH** (for deployment)
-
-### Step 4: Configure Node.js in Jenkins
+### Step 3: Configure Jenkins Tools
 
 1. **Manage Jenkins** → **Global Tool Configuration**
-2. **NodeJS installations**:
-   - Name: `Node.js 20`
-   - Version: `20.x.x` (auto-install)
-3. **Save**
+2. **Add NodeJS**:
+   - Name: `node-20`
+   - Version: `NodeJS 20.x`
 
-### Step 5: Create SSH Key for Jenkins
+### Step 4: Create Jenkins Pipeline
 
-```bash
-# Generate SSH key as jenkins user
-sudo -u jenkins ssh-keygen -t rsa -b 4096 -C "jenkins@laxmi-app"
+1. **New Item** → **Pipeline**
+2. **Name**: `laxmi-app-deploy`
+3. **Pipeline**:
+   - Definition: `Pipeline script from SCM`
+   - SCM: `Git`
+   - Repository URL: `https://github.com/YOUR_USERNAME/laxmi-app.git`
+   - Script Path: `Jenkinsfile`
 
-# Add public key to authorized_keys
-sudo cat /var/lib/jenkins/.ssh/id_rsa.pub | sudo tee -a ~/.ssh/authorized_keys
+### Step 5: Run Pipeline
 
-# Set proper permissions
-sudo chmod 700 ~/.ssh
-sudo chmod 600 ~/.ssh/authorized_keys
+1. **Build Now**
+2. **Watch Console Output**
+3. **Verify Deployment**
+
+Your app will be available at:
 ```
-
-### Step 6: Configure Publish Over SSH Plugin
-
-1. **Manage Jenkins** → **Configure System**
-2. **Publish over SSH** section:
-   - **SSH Server**:
-     - Name: `EC2 Localhost`
-     - Hostname: `localhost`
-     - Username: `ubuntu`
-     - Remote directory: `/var/www`
-   - **Use SSH Key**: Select the key path `/var/lib/jenkins/.ssh/id_rsa`
-3. **Test Connection** → Should show "Success"
-4. **Save**
-
-### Step 7: Create Jenkins Pipeline Job
-
-1. **New Item** → **Pipeline** → Name: `laxmi-app-deploy`
-2. Configure the pipeline:
-
-#### Pipeline Configuration (Jenkinsfile)
-
-Create a file named `Jenkinsfile` in your project root:
-
-```groovy
-pipeline {
-    agent any
-    
-    environment {
-        APP_DIR = '/var/www/laxmi-app'
-        NODE_VERSION = '20.x'
-    }
-    
-    stages {
-        stage('Checkout') {
-            steps {
-                echo '🔄 Checking out code from Git...'
-                checkout scm
-            }
-        }
-        
-        stage('Build') {
-            steps {
-                echo '📦 Installing dependencies and building...'
-                sh '''
-                    npm install
-                    npm run build
-                '''
-            }
-        }
-        
-        stage('Archive Build') {
-            steps {
-                echo '📁 Archiving build artifacts...'
-                archiveArtifacts artifacts: 'dist/**/*', fingerprint: true
-            }
-        }
-        
-        stage('Deploy') {
-            steps {
-                echo '🚀 Deploying to EC2...'
-                sshPublisher(
-                    publishers: [
-                        sshPublisherDesc(
-                            configName: 'EC2 Localhost',
-                            transfers: [
-                                sshTransfer(
-                                    sourceFiles: 'dist/**',
-                                    removePrefix: 'dist',
-                                    remoteDirectory: 'laxmi-app',
-                                    execCommand: """
-                                        cd ${APP_DIR}
-                                        sudo rm -rf dist_bak
-                                        sudo mv dist dist_bak || true
-                                        sudo mv /var/www/laxmi-app/dist dist
-                                        sudo chown -R www-data:www-data dist
-                                        sudo chmod -R 755 dist
-                                        sudo systemctl reload nginx
-                                        echo '✅ Deployment complete!'
-                                    """
-                                )
-                            ]
-                        )
-                    ]
-                )
-            }
-        }
-        
-        stage('Verify') {
-            steps {
-                echo '✅ Verifying deployment...'
-                sh 'curl -f http://localhost || exit 1'
-            }
-        }
-    }
-    
-    post {
-        success {
-            echo '🎉 Deployment successful!'
-        }
-        failure {
-            echo '❌ Deployment failed!'
-        }
-        always {
-            cleanWs()
-        }
-    }
-}
+http://YOUR_EC2_IP_ADDRESS:5200
 ```
-
-3. In Jenkins job configuration:
-   - **Build Triggers**: 
-     - ✅ **GitHub hook trigger for GITScm polling**
-   - **Pipeline**: 
-     - Definition: **Pipeline script from SCM**
-     - SCM: **Git**
-     - Repository URL: Your GitHub repo
-     - Credentials: Add your GitHub credentials
-     - Branch: `*/main` or `*/master`
-     - Script Path: `Jenkinsfile`
-
-### Step 8: Setup GitHub Webhook
-
-1. Go to your GitHub repository
-2. **Settings** → **Webhooks** → **Add webhook**
-3. Configure:
-   - Payload URL: `http://YOUR_EC2_IP:8080/github-webhook/`
-   - Content type: `application/json`
-   - Events: **Just the push event**
-4. **Add webhook**
-
-### Step 9: Update Jenkins Security Group
-
-Add to EC2 Security Group:
-- **Custom TCP** (Port 8080) from your IP or `0.0.0.0/0`
-
-### Step 10: First Deployment
-
-1. In Jenkins, click **"Build Now"**
-2. Watch the pipeline execute
-3. Check your app at `http://YOUR_EC2_IP`
 
 ---
 
-## 🔒 Option 3: SSL/HTTPS Setup (Recommended)
+## 🔧 Maintenance Commands
 
-### Using Let's Encrypt (Free SSL)
-
-```bash
-# Install Certbot
-sudo apt install -y certbot python3-certbot-nginx
-
-# Get SSL certificate
-sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
-
-# Auto-renewal (certbot sets this up automatically)
-sudo certbot renew --dry-run
-```
-
-Update your domain's A record to point to EC2 IP address.
-
----
-
-## 🔄 Updating the Application
-
-### Manual Update
-
+### Update Application
 ```bash
 cd /var/www/laxmi-app
 sudo git pull
@@ -415,150 +260,110 @@ sudo npm run build
 sudo systemctl reload nginx
 ```
 
-### Automated Update (Jenkins)
+### Check Nginx Status
+```bash
+sudo systemctl status nginx
+```
 
-Just push to GitHub! Jenkins will automatically:
-1. Pull latest code
-2. Install dependencies
-3. Build the app
-4. Deploy to EC2
-5. Reload Nginx
+### View Nginx Logs
+```bash
+sudo tail -f /var/log/nginx/error.log
+```
+
+### Restart Nginx
+```bash
+sudo systemctl restart nginx
+```
 
 ---
 
-## 🛠️ Troubleshooting
+## 🔒 Security Considerations
+
+### Firewall (UFW)
+```bash
+# Enable UFW
+sudo ufw enable
+
+# Allow SSH
+sudo ufw allow ssh
+
+# Allow HTTP
+sudo ufw allow 5200
+
+# Check status
+sudo ufw status
+```
+
+### SSL/HTTPS (Optional)
+Consider using Let's Encrypt for free SSL certificates:
+```bash
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d yourdomain.com
+```
+
+---
+
+## 🆘 Troubleshooting
 
 ### App Not Loading
-
-```bash
-# Check Nginx status
-sudo systemctl status nginx
-
-# Check Nginx logs
-sudo tail -f /var/log/nginx/error.log
-
-# Restart Nginx
-sudo systemctl restart nginx
-
-# Test Nginx configuration
-sudo nginx -t
-```
-
-### Build Fails
-
-```bash
-# Clear npm cache
-sudo npm cache clean --force
-
-# Remove node_modules and reinstall
-sudo rm -rf node_modules package-lock.json
-sudo npm install
-```
+1. Check Nginx status: `sudo systemctl status nginx`
+2. Test config: `sudo nginx -t`
+3. Check logs: `sudo tail -f /var/log/nginx/error.log`
 
 ### Permission Issues
-
-```bash
-# Fix ownership
-sudo chown -R www-data:www-data /var/www/laxmi-app
-sudo chmod -R 755 /var/www/laxmi-app
-```
+1. Verify ownership: `ls -la /var/www/laxmi-app`
+2. Fix permissions: `sudo chown -R www-data:www-data /var/www/laxmi-app`
 
 ### Jenkins Not Starting
-
-```bash
-# Check Jenkins logs
-sudo journalctl -u jenkins -f
-
-# Restart Jenkins
-sudo systemctl restart jenkins
-```
+1. Check status: `sudo systemctl status jenkins`
+2. View logs: `sudo journalctl -u jenkins`
 
 ---
 
-## 📊 Monitoring & Maintenance
+## 📈 Monitoring
 
-### Check Application Status
-
+### Basic Monitoring
 ```bash
-# Check if Nginx is running
-sudo systemctl status nginx
+# Check system resources
+htop
 
-# Check if Jenkins is running
-sudo systemctl status jenkins
-
-# Check disk space
+# Check disk usage
 df -h
 
 # Check memory usage
 free -h
 ```
 
-### Regular Maintenance
-
+### Log Monitoring
 ```bash
-# Update system packages
-sudo apt update && sudo apt upgrade
+# Monitor Nginx access logs
+sudo tail -f /var/log/nginx/access.log
 
-# Clean old builds (if using Jenkins)
-# Go to Jenkins → Manage Jenkins → Tools and Actions → Clean Old Builds
+# Monitor Nginx error logs
+sudo tail -f /var/log/nginx/error.log
 ```
 
 ---
 
-## 📈 Optional Enhancements
+## 🗑️ Uninstall
 
-### 1. Setup CloudWatch Monitoring
+If you need to remove the application:
 
-Monitor CPU, memory, and network usage in AWS Console.
+```bash
+# Stop Nginx
+sudo systemctl stop nginx
 
-### 2. Setup Auto-Scaling
+# Remove application files
+sudo rm -rf /var/www/laxmi-app
 
-Configure EC2 Auto Scaling for high availability.
+# Remove Nginx config
+sudo rm /etc/nginx/sites-available/laxmi-app
+sudo rm /etc/nginx/sites-enabled/laxmi-app
 
-### 3. Use CloudFront CDN
-
-Distribute static assets globally for faster loading.
-
-### 4. Database Backup
-
-If adding a database later, setup automated backups.
-
----
-
-## 🎯 Quick Deployment Checklist
-
-### EC2 Setup
-- [ ] Launch EC2 instance
-- [ ] Configure security group
-- [ ] Install Node.js and Nginx
-- [ ] Clone repository
-- [ ] Build application
-- [ ] Configure Nginx
-- [ ] Test deployment
-
-### Jenkins Setup (Optional)
-- [ ] Install Jenkins
-- [ ] Install required plugins
-- [ ] Configure SSH keys
-- [ ] Create pipeline job
-- [ ] Setup GitHub webhook
-- [ ] Test automated deployment
-
-### SSL Setup (Optional)
-- [ ] Point domain to EC2 IP
-- [ ] Install Certbot
-- [ ] Get SSL certificate
-- [ ] Configure Nginx for HTTPS
+# Restart Nginx
+sudo systemctl restart nginx
+```
 
 ---
 
-## 📞 Support
-
-- **Nginx Docs**: https://nginx.org/en/docs/
-- **Jenkins Docs**: https://www.jenkins.io/doc/
-- **AWS EC2 Docs**: https://docs.aws.amazon.com/ec2/
-
----
-
-**🎉 Congratulations! Your Laxmi Stationary app is now deployed and accessible worldwide!**
-
+**🎉 Deployment Complete! Your Laxmi Stationary app is now running on port 5200!**

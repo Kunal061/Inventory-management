@@ -33,9 +33,9 @@ const Sales: React.FC<SalesProps> = ({ refreshTrigger, onDataChange }) => {
       return;
     }
 
-    const qty = parseInt(quantity);
+    const qty = parseInt(quantity) || 0; // Handle NaN case
     
-    if (isNaN(qty) || qty <= 0) {
+    if (qty <= 0) {
       alert('Please enter a valid quantity');
       return;
     }
@@ -156,7 +156,7 @@ const Sales: React.FC<SalesProps> = ({ refreshTrigger, onDataChange }) => {
               <div className="flex-1 sm:text-right w-full sm:w-auto">
                 <p className="text-sm text-gray-600">Total Amount</p>
                 <p className="text-2xl font-bold text-indigo-600">
-                  ₹{(selectedItem.price * parseInt(quantity || '0')).toFixed(2)}
+                  ₹{((selectedItem.price * (parseInt(quantity) || 0)).toFixed(2))}
                 </p>
               </div>
               <button

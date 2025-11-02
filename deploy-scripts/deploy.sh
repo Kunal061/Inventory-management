@@ -55,15 +55,60 @@ sudo chmod -R 755 "${APP_DIR}/dist"
 echo -e "${GREEN}✅ Permissions set${NC}"
 echo ""
 
+# Update Nginx configuration to use port 5200
+echo -e "${BLUE}📋 Configuring Nginx for port 5200...${NC}"
+sudo bash -c 'cat > /etc/nginx/sites-available/laxmi-app << EOF
+server {
+    listen 5200;
+    server_name _;
+    root /var/www/laxmi-app/dist;
+    index index.html;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript 
+               application/x-javascript application/xml+rss 
+               application/json application/javascript;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # Handle React Router
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    # Cache static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)\$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+EOF'
+
+# Enable site (create symlink if it doesn't exist)
+sudo ln -sf /etc/nginx/sites-available/laxmi-app /etc/nginx/sites-enabled/
+
+# Remove default site if it exists
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Test Nginx configuration
+echo -e "${BLUE}🔍 Testing Nginx configuration...${NC}"
+sudo nginx -t
+
 # Reload Nginx
 echo -e "${BLUE}🔄 Reloading Nginx...${NC}"
 sudo systemctl reload nginx
 echo -e "${GREEN}✅ Nginx reloaded${NC}"
 echo ""
 
-# Health check
-echo -e "${BLUE}🏥 Performing health check...${NC}"
-if curl -f http://localhost > /dev/null 2>&1; then
+# Health check on port 5200
+echo -e "${BLUE}🏥 Performing health check on port 5200...${NC}"
+if curl -f http://localhost:5200 > /dev/null 2>&1; then
     echo -e "${GREEN}✅ Health check passed${NC}"
 else
     echo -e "${RED}⚠️  Health check failed, rolling back...${NC}"
@@ -79,6 +124,5 @@ echo ""
 
 echo -e "${GREEN}🎉 Deployment successful!${NC}"
 echo ""
-echo "🌐 Your app is now live at: http://YOUR_EC2_IP"
+echo "🌐 Your app is now live at: http://YOUR_EC2_IP:5200"
 echo ""
-

@@ -48,8 +48,8 @@ const Inventory: React.FC<InventoryProps> = ({ refreshTrigger, onDataChange }) =
 
   const handleUpdateStock = () => {
     if (stockUpdateModal && newStock) {
-      const stockValue = parseInt(newStock);
-      if (isNaN(stockValue) || stockValue < 0) {
+      const stockValue = parseInt(newStock) || 0; // Handle NaN case
+      if (stockValue < 0) {
         alert('Please enter a valid stock number');
         return;
       }

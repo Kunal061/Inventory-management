@@ -186,6 +186,11 @@ laxmi-app/
 └── package.json               # Dependencies
 ```
 
+## Deployment Information
+
+When deployed to production, the application will be accessible on port 5200:
+- **Production URL**: `http://YOUR_SERVER_IP:5200`
+
 ## Future Enhancements
 
 Potential features for client customization:
@@ -198,15 +203,3 @@ Potential features for client customization:
 - Inventory alerts (email notifications)
 - Data export (CSV/Excel)
 - Cloud backup integration
-
-## License
-
-This project is created for commercial use by the freelancer.
-
-## Support
-
-For issues or customization requests, contact the developer.
-
----
-
-**Built with ❤️ for Laxmi Stationary**

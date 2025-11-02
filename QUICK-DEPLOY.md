@@ -8,7 +8,7 @@ Shortest path to get Laxmi Stationary app running on EC2.
 
 AWS Console → Launch Ubuntu 22.04 → t2.micro → Configure security group:
 - SSH (22) from your IP
-- HTTP (80) from anywhere
+- Custom TCP (5200) from anywhere (for App)
 - Custom TCP (8080) from anywhere (for Jenkins)
 
 ### 2. Connect & Setup
@@ -39,7 +39,7 @@ sudo npm run build
 sudo bash deploy-scripts/deploy.sh
 
 # Access your app
-curl http://localhost
+curl http://localhost:5200
 ```
 
 ### 4. Setup Jenkins (Optional)
@@ -75,8 +75,19 @@ cd laxmi-app
 sudo npm install
 sudo npm run build
 
-# 4. Configure Nginx
-sudo cp deploy-scripts/nginx.conf /etc/nginx/sites-available/laxmi-app
+# 4. Configure Nginx for port 5200
+sudo bash -c 'cat > /etc/nginx/sites-available/laxmi-app << EOF
+server {
+    listen 5200;
+    server_name _;
+    root /var/www/laxmi-app/dist;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+}
+EOF'
 sudo ln -s /etc/nginx/sites-available/laxmi-app /etc/nginx/sites-enabled/
 sudo rm /etc/nginx/sites-enabled/default
 sudo nginx -t
@@ -106,7 +117,7 @@ Just push to GitHub! 🚀
 
 ## 🌐 Access Your App
 
-- **App**: `http://YOUR_EC2_IP`
+- **App**: `http://YOUR_EC2_IP:5200`
 - **Jenkins**: `http://YOUR_EC2_IP:8080`
 
 ---
@@ -122,4 +133,3 @@ See full guide in `DEPLOY.md` for:
 ---
 
 **That's it! Your app should be live now! 🎉**
-

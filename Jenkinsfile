@@ -70,6 +70,49 @@ pipeline {
                         sudo chown -R www-data:www-data /var/www/laxmi-app/dist
                         sudo chmod -R 755 /var/www/laxmi-app/dist
                         
+                        # Update Nginx configuration to use port 5200
+                        sudo bash -c 'cat > /etc/nginx/sites-available/laxmi-app << EOF
+server {
+    listen 5200;
+    server_name _;
+    root /var/www/laxmi-app/dist;
+    index index.html;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript 
+               application/x-javascript application/xml+rss 
+               application/json application/javascript;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # Handle React Router
+    location / {
+        try_files \\$uri \\$uri/ /index.html;
+    }
+
+    # Cache static assets
+    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg)\\$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+EOF'
+                        
+                        # Enable site (create symlink if it doesn\\'t exist)
+                        sudo ln -sf /etc/nginx/sites-available/laxmi-app /etc/nginx/sites-enabled/
+                        
+                        # Remove default site if it exists
+                        sudo rm -f /etc/nginx/sites-enabled/default
+                        
+                        # Test Nginx configuration
+                        sudo nginx -t
+                        
                         # Reload Nginx
                         sudo systemctl reload nginx
                     '''
@@ -81,14 +124,14 @@ pipeline {
             steps {
                 script {
                     def healthCheck = sh(
-                        script: 'curl -f http://localhost > /dev/null 2>&1 && echo "SUCCESS" || echo "FAILED"',
+                        script: 'curl -f http://localhost:5200 > /dev/null 2>&1 && echo "SUCCESS" || echo "FAILED"',
                         returnStdout: true
                     ).trim()
                     
                     if (healthCheck == "SUCCESS") {
-                        echo "✅ Health check passed - Application is running!"
+                        echo "✅ Health check passed - Application is running on port 5200!"
                     } else {
-                        error "❌ Health check failed - Application is not responding"
+                        error "❌ Health check failed - Application is not responding on port 5200"
                     }
                 }
             }
@@ -110,10 +153,10 @@ pipeline {
                 🔧 Application Details:
                 - Deployed to: /var/www/laxmi-app/dist
                 - Served by: Nginx
-                - Access URL: http://YOUR_EC2_PUBLIC_IP
+                - Access URL: http://YOUR_EC2_PUBLIC_IP:5200
                 
                 📋 Next Steps:
-                1. Visit http://YOUR_EC2_PUBLIC_IP to see your application
+                1. Visit http://YOUR_EC2_PUBLIC_IP:5200 to see your application
                 2. Check Nginx logs if you encounter issues: sudo tail -f /var/log/nginx/error.log
                 """
             }

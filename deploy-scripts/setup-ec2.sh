@@ -52,10 +52,10 @@ echo -e "${GREEN}✅ Web directory created${NC}"
 echo ""
 
 # Setup Nginx
-echo -e "${BLUE}📋 Configuring Nginx...${NC}"
+echo -e "${BLUE}📋 Configuring Nginx for port 5200...${NC}"
 sudo bash -c 'cat > /etc/nginx/sites-available/laxmi-app << EOF
 server {
-    listen 80;
+    listen 5200;
     server_name _;
     root /var/www/laxmi-app/dist;
     index index.html;
@@ -79,7 +79,7 @@ server {
     }
 
     # Cache static assets
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)\$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
@@ -98,7 +98,7 @@ sudo nginx -t
 echo -e "${BLUE}🔄 Restarting Nginx...${NC}"
 sudo systemctl restart nginx
 sudo systemctl enable nginx
-echo -e "${GREEN}✅ Nginx configured and running${NC}"
+echo -e "${GREEN}✅ Nginx configured and running on port 5200${NC}"
 echo ""
 
 echo -e "${GREEN}🎉 EC2 Setup Complete!${NC}"
@@ -110,6 +110,5 @@ echo "  3. Build application: npm run build"
 echo "  4. Set permissions: sudo chown -R www-data:www-data /var/www/laxmi-app"
 echo "  5. Reload Nginx: sudo systemctl reload nginx"
 echo ""
-echo "🌐 Your app will be available at: http://YOUR_EC2_IP"
+echo "🌐 Your app will be available at: http://YOUR_EC2_IP:5200"
 echo ""
-

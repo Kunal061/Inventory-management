@@ -5,7 +5,7 @@ pipeline {
         APP_DIR = '/var/www/laxmi-app'
         NODE_VERSION = '20.x'
         EC2_USER = 'ubuntu'           // Update with your EC2 username
-        EC2_HOST = '13.233.122.241' // Update with your EC2 instance IP or hostname
+        EC2_HOST = '13.233.122.241'  // Update with your EC2 instance IP or hostname
     }
     
     stages {
@@ -36,10 +36,9 @@ pipeline {
         stage('Deploy') {
             steps {
                 echo "🚀 Deploying to EC2 at ${EC2_HOST}..."
-                // Upload files and run remote commands via SSH
                 sh """
-                    scp -r dist/* ${EC2_USER}@${EC2_HOST}:${APP_DIR}/dist_tmp
-                    ssh ${EC2_USER}@${EC2_HOST} << EOF
+                    scp -o StrictHostKeyChecking=no -r dist/assets dist/index.html dist/vite.svg ${EC2_USER}@${EC2_HOST}:${APP_DIR}/dist_tmp
+                    ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << EOF
                         sudo mv ${APP_DIR}/dist ${APP_DIR}/dist_bak || true
                         sudo mv ${APP_DIR}/dist_tmp ${APP_DIR}/dist
                         sudo chown -R www-data:www-data ${APP_DIR}/dist
